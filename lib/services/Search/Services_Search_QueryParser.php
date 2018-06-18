@@ -679,10 +679,15 @@ class Services_Search_QueryParser {
 				 * add quotes around it when not numeric. We cannot blankly always add quotes
 				 * as postgresql doesn't like that of course
 				 */
-				if (!is_numeric($tmpFilterValue)) {
+                if (!is_numeric($tmpFilterValue)) {
 					$tmpFilterValue = $this->_dbEng->safe($tmpFilterValue);
 				} else {
-					$tmpFilterValue = $this->_dbEng->safe((int) $tmpFilterValue);
+                    # numeric, test if greater max int value
+                    if ($tmpFilterValue > PHP_INT_MAX) {
+                        $tmpFilterValue = $this->_dbEng->safe($tmpFilterValue);
+                    } else {
+                        $tmpFilterValue = $this->_dbEng->safe((int) $tmpFilterValue);
+                    }
 				} # if
 
 				# depending on the type of search, we either add the filter as an AND or an OR
@@ -714,7 +719,7 @@ class Services_Search_QueryParser {
 				$ftsEng = dbfts_abs::Factory($this->_dbEng);
 				$parsedTextQueryResult = $ftsEng->createTextQuery($searches, $additionalFields);
 
-				$filterValueSql['AND'][] = ' (' . implode(' ' . $searches[0]['booloper'] . ' ', $parsedTextQueryResult['filterValueSql']) . ') ';
+                $filterValueSql['AND'][] = ' (' . implode(' ' . $searches[0]['booloper'] . ' ', $parsedTextQueryResult['filterValueSql']) . ') ';
 
 				$additionalTables = array_merge($additionalTables, $parsedTextQueryResult['additionalTables']);
 				$additionalFields = array_merge($additionalFields, $parsedTextQueryResult['additionalFields']);
@@ -819,9 +824,11 @@ class Services_Search_QueryParser {
 					} # foreach
 					
 				} # foreach
-
+//var_dump($headCatNumber);
+//var_dump ("categorylist");
 //var_dump($categoryList);
-//var_dump(expression)($subcatsMissing);
+//var_dump ("subcatsMissing");
+//var_dump($subcatsMissing);
 //die();
 
 				/*
@@ -860,7 +867,8 @@ class Services_Search_QueryParser {
 										 * items. We determine this whether the majority is 
 										 * selected or excluded.
 										 */
-										$moreFalseThanTrue = (count(@$subcatsMissing[$headCatNumber][$subType][$subCatKey]) > (count(@SpotCategories::$_categories[$headCatNumber][$subCatKey][$subCatValue]) / 2));
+                                        $right1 = (is_array(@SpotCategories::$_categories[$headCatNumber][$subCatKey][$subCatValue])) ? count(@SpotCategories::$_categories[$headCatNumber][$subCatKey][$subCatValue]) : 0;
+                                        $moreFalseThanTrue = (count(@$subcatsMissing[$headCatNumber][$subType][$subCatKey]) > ($right1 / 2));
 										foreach(SpotCategories::$_categories[$headCatNumber][$subCatKey] as $subCatValue => $subCatDesc) {
 											if (in_array($subType, $subCatDesc[2])) {
 												if ($moreFalseThanTrue) {

@@ -168,16 +168,7 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 			} elseif ($this->_params['ep'] != "") {
 				$this->showApiError(201);
 				return ;
-			} else {
-                // Complete season search, add wildcard character to season
-            	if (!empty($title)) {
-                    if (!empty($seasonSearch )) {
-                        $seasonSearch .= '*';
-                        // and search for the text 'Season ' ...
-                        $searchParams['value'][] = "Titel:=:OR:+\"" . $title . "\" +\"Season " . (int) $this->_params['season'] . "\"";
-                    }
-            	}
-            } # else
+            } # if
 
 			/*
              * The + operator is supported both by PostgreSQL and MySQL's FTS
@@ -185,18 +176,30 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 			 * We search both for S04E17 and S04 E17 (with a space)
 			 */
             if (!empty($title)) {
-				$searchParams['value'][] = "Titel:=:OR:+\"" . $tvInfo->getTitle() . "\" +" . $seasonSearch . $episodeSearch;
-	            if (!empty($episodeSearch)) {
-	                $searchParams['value'][] = "Titel:=:OR:+\"" . $tvInfo->getTitle() . "\" +" . $seasonSearch . ' +' . $episodeSearch;
-	            } # if
+                if (!empty($seasonSearch)) {
+                    if (!empty($episodeSearch)) {
+                        $searchParams['value'][] = "Titel:=:AND:+\"" . $tvInfo->getTitle() . "\"" ;
+                        $searchParams['value'][] = "Titel:=:DEF:".$seasonSearch . " ". $episodeSearch;
+                    } else {
+                        // Complete season search, add wildcard character to season
+                        if (empty($this->_params['noalt']) or $this->_params['noalt'] <> "1") {
+                            $searchParams['value'][] = 'Titel:=:OR:+"' . $title . '" +"Seizoen ' . (int) $this->_params['season'] .'"';
+                            $searchParams['value'][] = 'Titel:=:OR:+"' . $title . '" +"Season ' . (int) $this->_params['season'] .'"';
+                        }
+                        $searchParams['value'][] = 'Titel:=:OR:+"' . $title . '" +' . $seasonSearch.'*';
+                    }
+                } else {
+                    $searchParams['value'][] = "Titel:=:OR:+\"" . $tvInfo->getTitle() . "\" +" . $episodeSearch;
+                }
             }
             if (empty($this->_params['cat'] )) {
 				$this->_params['cat'] = 5000;
             }
 		} elseif ($this->_params['t'] == "music") {
-			if (empty($this->_params['artist']) && empty($this->_params['cat'])) {
-				$this->_params['cat'] = 3000;
-			} else {
+            if (empty($this-> _params['cat'])) {
+                $this->_params['cat'] = 3000;
+            }
+            if (!empty($this->_params['artist'])) {
 				$searchParams['value'][] = "Titel:=:DEF:\"" . $this->_params['artist'] . "\"";
 			} # if
 		} elseif ($this->_params['t'] == "m" || $this->_params['t'] == "movie") {
@@ -234,12 +237,15 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 				/*
 				* Add movie title to the query
 				*/
+
 				$searchParams['value'][] = "Titel:=:OR:+\"" . $imdbInfo->getTitle()  . "\" " . $movieReleaseDate;
 
-				// imdb sometimes returns the title translated, if so, pass the original title as well
-				if ($imdbInfo->getAlternateTitle() != null) {
-					$searchParams['value'][] = "Title:=:OR:+\"" . $imdbInfo->getAlternateTitle() . "\" " . $movieReleaseDate;
-				} # if
+				// imdb sometimes returns the title translated, if so, pass the translated title as well, bu only if noalt <> 1
+                if (empty($this->_params['noalt']) or $this->_params['noalt'] <> "1") {
+                    if ($imdbInfo->getAlternateTitle() != null) {
+                        $searchParams['value'][] = "Title:=:OR:+\"" . $imdbInfo->getAlternateTitle() . "\" " . $movieReleaseDate;
+                    } # if
+                } # if
 			} # if
 
 			/*
@@ -286,7 +292,7 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 		$searchParams['value'][] = "filesize:>:DEF:0";
 
 		if(!empty($this->_params["poster"])){
-			$searchParams["value"][] = "Poster:=:*".$this->_params["poster"]."*";
+			$searchParams["value"][] = "Poster:=:".$this->_params["poster"];
 		}
 
         /*
@@ -500,6 +506,31 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 					$attr->setAttribute('value', $spot['commentcount']);
 					$item->appendChild($attr);
 				} # if
+				if($this->_tplHelper->isSpotNew($spot)) {
+					$attr = $doc->createElement("new", "true");
+					$item->appendChild($attr);
+				}
+				else {
+					$attr = $doc->createElement("new", "false");
+					$item->appendChild($attr);	
+				}
+				if(!empty($spot["hasbeenseen"])) {
+					$attr = $doc->createElement("seen", "true");
+					$item->appendChild($attr);
+				}
+				else {
+					$attr = $doc->createElement("seen", "false");
+					$item->appendChild($attr);
+					
+				}
+				if(!empty($spot["hasbeendownloaded"])) {
+					$attr = $doc->createElement("downloaded", "true");
+					$item->appendChild($attr);
+				}
+				else {
+					$attr = $doc->createElement("downloaded", "false");
+					$item->appendChild($attr);
+				}
 			} # foreach
 
 			$this->sendContentTypeHeader('xml');
@@ -762,10 +793,12 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 		# geen Notice veroorzaken.
 		if (!empty($cat[0])) {
 			switch ($cat[0]) {
-				case "a"	: if ($hcat == 0 ) {
-                                 $newznabcat = $this->spotAcat2nabcat(); return @$newznabcat[$hcat][$znr][$nr];
+				case "a"	: if ($hcat == 0 or $hcat == 1) {
+                                 $newznabcat = $this->spotAcat2nabcat(); 
+                                 return @$newznabcat[$hcat][$znr][$nr];
                               } else {
-                                 $newznabcat = $this->spotAcat2nabcat(); return @$newznabcat[$hcat][$nr];
+                                 $newznabcat = $this->spotAcat2nabcat(); 
+                                 return @$newznabcat[$hcat][$nr];
                               }
                               break;
 
@@ -879,6 +912,7 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 			case 3000: return 'cat1_a';
 			case 3010: return 'cat1_a0';
 			case 3020: return 'cat0_d13';
+            case 3030: return 'cat1_z3';
 			case 3040: return 'cat1_a2,cat1_a4,cat1_a7,cat1_a8';
 
 			case 4000: return 'cat3';
@@ -907,8 +941,8 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 	} # nabcat2spotcat
 
 	function spotAcat2nabcat() {
-		return Array(0 =>
-                Array(0 =>
+		return Array(0 => // Cat0 - Image
+                Array(0 => // Z0 - Movie
 				            Array(0 => "2000|2030",
 					              1 => "2000|2030",
 					              2 => "2000|2030",
@@ -921,7 +955,7 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 					              9 => "2000|2040",
 					              10 => "2000|2030",
                                   11 => "7000|7020"),
-                      1 => 
+                      1 => // Z1 - Series
 				            Array(0 => "5000|5030",
 					              1 => "5000|5030",
 					              2 => "5000|5030",
@@ -934,7 +968,7 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 					              9 => "5000|5040",
 					              10 => "5000|5030",
                                   11 => "7000|7020"),
-                      3 => 
+                      3 => // Z3 - Erotic
 				            Array(0 => "6000|6030",
 					              1 => "6000|6030",
 					              2 => "6000|6030",
@@ -947,21 +981,53 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 					              9 => "6000|6040",
 					              10 => "6000|6030",
                                   11 => "6000|6000"),
-                      4 =>     // Picture (new)
+                      4 =>  // Z4 Picture (new)
 				            Array(11 => "7000|7010",
                                   12 => "7000|7010"),
                       ),
-			  1 =>
-				Array(0	=> "3000|3010",
-					  1 => "3000|3010",
-					  2 => "3000|3040",
-					  3 => "3000|3010",
-					  4 => "3000|3040",
-					  5 => "3000|3040",
-					  6 => "3000|3010",
-					  7 => "3000|3040",
-					  8 => "3000|3040"),
-			  2 =>
+			  1 => // Cat1 - Audio
+               Array(0 => // Z0
+				Array(0	=> "3000|3010",  // MP3
+					  1 => "3000|3010",  // WMA
+					  2 => "3000|3040",  // WAV
+					  3 => "3000|3010",  // OGG
+					  4 => "3000|3040",  // EAC
+					  5 => "3000|3040",  // DTS
+					  6 => "3000|3010",  // AAC
+					  7 => "3000|3040",  // APE
+					  8 => "3000|3040"), // FLAC
+                    1 => // Z1
+				Array(0	=> "3000|3010",  // MP3
+					  1 => "3000|3010",  // WMA
+					  2 => "3000|3040",  // WAV
+					  3 => "3000|3010",  // OGG
+					  4 => "3000|3040",  // EAC
+					  5 => "3000|3040",  // DTS
+					  6 => "3000|3010",  // AAC
+					  7 => "3000|3040",  // APE
+					  8 => "3000|3040"), // FLAC
+                    2 => // Z2
+				Array(0	=> "3000|3010",  // MP3
+					  1 => "3000|3010",  // WMA
+					  2 => "3000|3040",  // WAV
+					  3 => "3000|3010",  // OGG
+					  4 => "3000|3040",  // EAC
+					  5 => "3000|3040",  // DTS
+					  6 => "3000|3010",  // AAC
+					  7 => "3000|3040",  // APE
+					  8 => "3000|3040"), // FLAC
+                    3 => // Z3
+				Array(0	=> "3000|3030",  // MP3
+					  1 => "3000|3030",  // WMA
+					  2 => "3000|3030",  // WAV
+					  3 => "3000|3030",  // OGG
+					  4 => "3000|3030",  // EAC
+					  5 => "3000|3030",  // DTS
+					  6 => "3000|3030",  // AAC
+					  7 => "3000|3030",  // APE
+					  8 => "3000|3030"), // FLAC
+                    ),
+			  2 => // Cat2 - Games
 				Array(0 => "4000|4050",
 					  1 => "4000|4030",
 					  2 => "TUX",
@@ -979,7 +1045,7 @@ class SpotPage_newznabapi extends SpotPage_Abs {
 					  14 => "4000|4040",
 					  15 => "4000|4040",
 					  16 => "3DS"),
-			  3 =>
+			  3 => // Cat3 - Applications
 				Array(0 => "4000|4020",
 					  1 => "4000|4030",
 					  2 => "TUX",
